@@ -7,6 +7,7 @@ const ResponseModel = require('../models/ResponseModel');
 const OtpRepository = require("../repositories/otpRepository");
 const OtpServiceClient = require("../client/otpServiceClient");
 const AccountStatusResponse = require("../models/AccountStatusResponse");
+const logger = require("../logger/Logger");
 
 class UserControllerDB {
 
@@ -14,6 +15,7 @@ class UserControllerDB {
         this.userRepository = new UserRepository();
         this.otpRepository = new OtpRepository();
         this.otpServiceClient = new OtpServiceClient();
+        
     }
 
     /**
@@ -22,20 +24,26 @@ class UserControllerDB {
      * @returns {ResponseModel} Respuesta formateada según el tipo de error
      */
     _handleControllerError(error) {
-        console.error(`❌ [UserControllerDB] Error: ${error.message}`);
-        
+        const controller = "UserControllerDB";
+        logger.error(controller, "❌ Error capturado en controlador", {
+            message: error.message,
+            code: error.code,
+            statusCode: error.statusCode,
+            stack: error.stack
+        });
+
         // Manejar error de email duplicado
-        if (error.statusCode === 409 || error.code === 'EMAIL_DUPLICATE') {
-            return ResponseModel.emailDuplicate('El email ya existe');
+        if (error.statusCode === 409 || error.code === "EMAIL_DUPLICATE") {
+            return ResponseModel.emailDuplicate("El email ya existe");
         }
-        
+
         // Manejar errores de base de datos
         if (error.statusCode === 500) {
-            return ResponseModel.databaseError('Error interno del servidor');
+            return ResponseModel.databaseError("Error interno del servidor");
         }
-        
+
         // Error genérico
-        return ResponseModel.internalError('Ocurrió un error inesperado');
+        return ResponseModel.internalError("Ocurrió un error inesperado");
     }
 
     /**
@@ -46,6 +54,8 @@ class UserControllerDB {
      * @returns {ResponseModel} Respuesta formateada
      */
     _createSuccessResponse(message, data, statusCode = 200) {
+        const controller = "UserControllerDB";
+        logger.debug(controller, "📦 Creando respuesta exitosa", { message, statusCode });
         return ResponseModel.success(message, data, statusCode);
     }
 
@@ -56,251 +66,242 @@ class UserControllerDB {
      * @param {Object} res - Response object de Express
      */
     async registerUser(req, res) {
-        console.log('🚀 [UserControllerDB] Registrando usuario..');
-        
-        try {
-            // Validar datos de entrada
-            const userRegister = new UserRegister(req.body);
-            
-            console.log(`📝 [UserControllerDB] Validando unicidad de email: ${userRegister.email}`);
+        const controller = "UserControllerDB";
+        logger.info(controller, "🚀 Registrando nuevo usuario...");
 
-            // Intentar crear el usuario en la base de datos
+        try {
+            const userRegister = new UserRegister(req.body);
+            logger.debug(controller, "📝 Validando unicidad de email", { email: userRegister.email });
+
             const createdUser = await this.userRepository.create(userRegister);
 
-            // Crear respuesta exitosa
+            logger.info(controller, "✅ Usuario registrado correctamente", { userId: createdUser.id });
+
             const userResponse = UserResponse.fromUser(createdUser);
-            
-            console.log(`✅ [UserControllerDB] Usuario registrado exitosamente con ID: ${createdUser.id}`);
-            
-            // Usar el modelo de respuesta estandarizado
             const response = this._createSuccessResponse(
-                'Usuario registrado exitosamente', 
-                userResponse.toJSON(), 
+                "Usuario registrado exitosamente",
+                userResponse.toJSON(),
                 201
             );
-            
+
             return response.send(res);
 
         } catch (error) {
             const response = this._handleControllerError(error);
-            response.log('[UserControllerDB]');
+            logger.warn(controller, "⚠️ Error al registrar usuario", { email: req.body?.email });
+            response.log(`[${controller}]`);
             return response.send(res);
         }
     }
 
-    
-    /**
-     * PUT /api/users/{id}
-     * Actualiza un usuario existente en la base de datos
-     * @param {Object} req - Request object de Express
-     * @param {Object} res - Response object de Express
-     */
-    async updateUser(req, res) {
-        const userId = parseInt(req.params.id);
-        console.log(`🚀 [UserControllerDB] Actualizando usuario con ID: ${userId}`);
-        
-        try {
-            // Validar datos de entrada
-            const userUpdate = new UserUpdate(req.body);
-            
-            console.log(`📝 [UserControllerDB] Actualizando usuario: ${userId} con email: ${userUpdate.email}`);
 
-            // Intentar actualizar el usuario en la base de datos
+    /**
+    * PUT /api/users/{id}
+    * Actualiza un usuario existente en la base de datos
+    */
+    async updateUser(req, res) {
+        const controller = "UserControllerDB";
+        const userId = parseInt(req.params.id);
+        logger.info(controller, "🚀 Actualizando usuario...", { userId });
+
+        try {
+            const userUpdate = new UserUpdate(req.body);
+            logger.debug(controller, "📝 Validando datos de actualización", {
+                userId,
+                email: userUpdate.email,
+            });
+
             const updatedUser = await this.userRepository.update(userId, userUpdate);
 
             if (!updatedUser) {
-                const response = ResponseModel.notFound('Usuario no encontrado');
-                response.log('[UserControllerDB]');
+                logger.warn(controller, "⚠️ Usuario no encontrado para actualización", { userId });
+                const response = ResponseModel.notFound("Usuario no encontrado");
+                response.log(`[${controller}]`);
                 return response.send(res);
             }
 
-            // Crear respuesta exitosa
             const userResponse = UserResponse.fromUser(updatedUser);
-            
-            console.log(`✅ [UserControllerDB] Usuario actualizado exitosamente con ID: ${updatedUser.id}`);
-            
-            // Usar el modelo de respuesta estandarizado
+            logger.info(controller, "✅ Usuario actualizado exitosamente", { userId: updatedUser.id });
+
             const response = this._createSuccessResponse(
-                'Usuario actualizado exitosamente', 
+                "Usuario actualizado exitosamente",
                 userResponse.toJSON()
             );
-            
+
             return response.send(res);
 
         } catch (error) {
+            logger.error(controller, "❌ Error al actualizar usuario", {
+                userId,
+                message: error.message,
+                stack: error.stack,
+            });
             const response = this._handleControllerError(error);
-            response.log('[UserControllerDB]');
+            response.log(`[${controller}]`);
             return response.send(res);
         }
     }
 
-    
     /**
      * GET /api/users?page=x&size=y
      * Obtiene todos los usuarios paginados
-     * @param {Object} req - Request object de Express
-     * @param {Object} res - Response object de Express
      */
     async getAllUsersPaginated(req, res) {
-        console.log('🚀 [UserControllerDB] Obteniendo usuarios paginados..');
-        
+        const controller = "UserControllerDB";
+        logger.info(controller, "🚀 Obteniendo usuarios paginados...");
+
         try {
-            // Obtener parámetros de query con valores por defecto
             const page = parseInt(req.query.page) || 1;
             const size = parseInt(req.query.size) || 10;
-            
-            console.log(`📝 [UserControllerDB] Parámetros de paginación - Página: ${page}, Tamaño: ${size}`);
+            logger.debug(controller, "📝 Parámetros de paginación recibidos", { page, size });
 
-            // Validar parámetros de entrada
             if (page < 1) {
-                const response = ResponseModel.badRequest('El número de página debe ser mayor a 0');
-                response.log('[UserControllerDB]');
-                return response.send(res);
-            }
-            
-            if (size < 1 || size > 100) {
-                const response = ResponseModel.badRequest('El tamaño de página debe estar entre 1 y 100');
-                response.log('[UserControllerDB]');
+                logger.warn(controller, "⚠️ Página inválida solicitada", { page });
+                const response = ResponseModel.badRequest("El número de página debe ser mayor a 0");
+                response.log(`[${controller}]`);
                 return response.send(res);
             }
 
-            // Obtener usuarios paginados del repositorio
+            if (size < 1 || size > 100) {
+                logger.warn(controller, "⚠️ Tamaño de página inválido", { size });
+                const response = ResponseModel.badRequest("El tamaño de página debe estar entre 1 y 100");
+                response.log(`[${controller}]`);
+                return response.send(res);
+            }
+
             const paginatedUsers = await this.userRepository.findAllPaginated(page, size);
-            
-            console.log(`✅ [UserControllerDB] Usuarios obtenidos exitosamente - Total: ${paginatedUsers.totalItems}, Páginas: ${paginatedUsers.totalPages}`);
-            
-            // Usar el modelo de respuesta estandarizado
+            logger.info(controller, "✅ Usuarios obtenidos exitosamente", {
+                totalItems: paginatedUsers.totalItems,
+                totalPages: paginatedUsers.totalPages,
+            });
+
             const response = this._createSuccessResponse(
-                'Usuarios obtenidos exitosamente', 
+                "Usuarios obtenidos exitosamente",
                 paginatedUsers.toJSON()
             );
-            
+
             return response.send(res);
 
         } catch (error) {
+            logger.error(controller, "❌ Error al obtener usuarios paginados", {
+                message: error.message,
+                stack: error.stack,
+            });
             const response = this._handleControllerError(error);
-            response.log('[UserControllerDB]');
+            response.log(`[${controller}]`);
             return response.send(res);
         }
     }
-
 
     /**
      * GET /api/users/{id}
      * Obtiene un usuario específico por ID
-     * @param {Object} req - Request object de Express
-     * @param {Object} res - Response object de Express
      */
     async getUserById(req, res) {
+        const controller = "UserControllerDB";
         const userId = parseInt(req.params.id);
-        console.log(`🚀 [UserControllerDB] Obteniendo usuario con ID: ${userId}`);
-        
+        logger.info(controller, "🚀 Obteniendo usuario por ID...", { userId });
+
         try {
-            
-            // Obtener usuario del repositorio
             const user = await this.userRepository.findById(userId);
-            
+
             if (!user) {
-                const response = ResponseModel.notFound('Usuario no encontrado');
-                response.log('[UserControllerDB]');
+                logger.warn(controller, "⚠️ Usuario no encontrado", { userId });
+                const response = ResponseModel.notFound("Usuario no encontrado");
+                response.log(`[${controller}]`);
                 return response.send(res);
             }
 
-            console.log(`✅ [UserControllerDB] Usuario obtenido exitosamente con ID: ${user.id}`);
-            
-            // Crear respuesta exitosa con UserResponse
+            logger.info(controller, "✅ Usuario obtenido exitosamente", { userId: user.id });
+
             const userResponse = UserResponse.fromUser(user);
-            
-            // Usar el modelo de respuesta estandarizado
             const response = this._createSuccessResponse(
-                'Usuario obtenido exitosamente', 
+                "Usuario obtenido exitosamente",
                 userResponse.toJSON()
             );
-            
+
             return response.send(res);
 
         } catch (error) {
+            logger.error(controller, "❌ Error al obtener usuario por ID", {
+                userId,
+                message: error.message,
+                stack: error.stack,
+            });
             const response = this._handleControllerError(error);
-            response.log('[UserControllerDB]');
+            response.log(`[${controller}]`);
             return response.send(res);
         }
     }
-
 
     /**
-     * GET /api/users/email/{email}
-     * Obtiene un usuario específico por email
-     * @param {Object} req - Request object de Express
-     * @param {Object} res - Response object de Express
-     */
+ * GET /api/users/email/{email}
+ * Obtiene un usuario específico por email
+ */
     async getUserByEmail(req, res) {
         const userEmail = req.query.value;
+        console.log(`🚀 [UserControllerDB] Iniciando búsqueda de usuario por email: ${userEmail}`);
 
-        console.log(`🚀 [UserControllerDB] Obteniendo usuario con email: ${userEmail}`);
-        
         try {
-            
-            // Obtener usuario del repositorio
+            if (!userEmail) {
+                console.warn("⚠️ [UserControllerDB] Email no proporcionado en la solicitud");
+                const response = ResponseModel.badRequest('Debe proporcionar un email válido');
+                return response.send(res);
+            }
+
+            console.log(`🔍 [UserControllerDB] Consultando usuario en repositorio...`);
             const user = await this.userRepository.findByEmail(userEmail);
-            
+
             if (!user) {
+                console.warn(`🚫 [UserControllerDB] Usuario no encontrado con email: ${userEmail}`);
                 const response = ResponseModel.notFound('Usuario no encontrado');
                 response.log('[UserControllerDB]');
                 return response.send(res);
             }
 
-            console.log(`✅ [UserControllerDB] Usuario obtenido exitosamente con email: ${userEmail}`);
-            
-            // Crear respuesta exitosa con UserAuthResponse (incluye password para autenticación)
+            console.log(`✅ [UserControllerDB] Usuario encontrado: ${userEmail}`);
             const userResponse = UserAuthResponse.fromUser(user);
-            
-            // Usar el modelo de respuesta estandarizado
+
             const response = this._createSuccessResponse(
-                'Usuario obtenido exitosamente', 
+                'Usuario obtenido exitosamente',
                 userResponse.toJSON()
             );
-            
+
             return response.send(res);
 
         } catch (error) {
+            console.error(`❌ [UserControllerDB] Error obteniendo usuario (${userEmail}):`, error.message);
             const response = this._handleControllerError(error);
             response.log('[UserControllerDB]');
             return response.send(res);
         }
     }
-
 
     /**
      * DELETE /api/users/{id}
      * Elimina lógicamente un usuario (soft delete)
-     * @param {Object} req - Request object de Express
-     * @param {Object} res - Response object de Express
      */
     async deleteUser(req, res) {
         const userId = parseInt(req.params.id);
-        console.log(`🚀 [UserControllerDB] Eliminando usuario con ID: ${userId}`);
-        
+        console.log(`🚀 [UserControllerDB] Solicitando eliminación de usuario con ID: ${userId}`);
+
         try {
-           
-            // Realizar eliminación lógica
+            console.log(`🗑️ [UserControllerDB] Ejecutando eliminación lógica...`);
             const deletedUser = await this.userRepository.delete(userId);
-            
+
             if (!deletedUser) {
+                console.warn(`🚫 [UserControllerDB] Usuario no encontrado o ya eliminado (ID: ${userId})`);
                 const response = ResponseModel.notFound('Usuario no encontrado o ya eliminado');
                 response.log('[UserControllerDB]');
                 return response.send(res);
             }
 
-            console.log(`✅ [UserControllerDB] Usuario eliminado exitosamente con ID: ${userId}`);
-            
-            // Usar el modelo de respuesta estandarizado (solo mensaje, sin datos)
-            const response = this._createSuccessResponse(
-                'El usuario se eliminó satisfactoriamente'
-            );
-            
+            console.log(`✅ [UserControllerDB] Eliminación lógica completada para ID: ${userId}`);
+            const response = this._createSuccessResponse('El usuario se eliminó satisfactoriamente');
             return response.send(res);
 
         } catch (error) {
+            console.error(`❌ [UserControllerDB] Error eliminando usuario (${userId}):`, error.message);
             const response = this._handleControllerError(error);
             response.log('[UserControllerDB]');
             return response.send(res);
@@ -309,79 +310,71 @@ class UserControllerDB {
 
     /**
      * PATCH /api/users/{id}/password
-     * Verifica un OTP para un usuario y reestablece su contraseña
-     * @param {Object} req - Request object de Express
-     * @param {Object} res - Response object de Express
+     * Verifica un OTP y reestablece contraseña
      */
     async updatePassword(req, res) {
-        console.log('🚀 [UserControllerDB] Verificando OTP y reestableciendo contraseña...');
-
+        console.log('🚀 [UserControllerDB] Iniciando flujo de restablecimiento de contraseña...');
         const userId = parseInt(req.params.id);
 
         try {
             const { otp, email, password } = req.body;
+            console.log(`📩 [UserControllerDB] Datos recibidos -> OTP: ${otp}, Email: ${email}, ID: ${userId}`);
 
-            // Validar que los datos existan
             if (!otp || !email || !password) {
-                const response = ResponseModel.badRequest('El OTP, el ID de usuario y su contraseña son obligatorios');
-                response.log('[UserControllerDB] Otp, email, o contraseña no presentes');
+                console.warn("⚠️ [UserControllerDB] Datos faltantes en la solicitud");
+                const response = ResponseModel.badRequest('El OTP, el email y la contraseña son obligatorios');
                 return response.send(res);
             }
 
-            // 🔍 Validar formato del OTP primero (con el servicio externo)
-            const checkRequest = { otp };
-            const formatResponse = await this.otpServiceClient.checkOtpFormat(checkRequest);
+            console.log(`🔍 [UserControllerDB] Validando formato del OTP con servicio externo...`);
+            const formatResponse = await this.otpServiceClient.checkOtpFormat({ otp });
 
             if (!formatResponse.isValidOtp) {
+                console.warn(`🚫 [UserControllerDB] OTP con formato inválido: ${otp}`);
                 const response = ResponseModel.badRequest('El formato del OTP es inválido');
-                console.log(`🚫 [UserControllerDB] Formato inválido de OTP recibido: ${otp}`);
                 return response.send(res);
             }
 
-            console.log(`✅ [UserControllerDB] Formato de OTP válido: ${otp}`);
-
-            // Obtener usuario del repositorio
+            console.log(`✅ [UserControllerDB] OTP válido. Consultando usuario (ID: ${userId}, Email: ${email})`);
             const user = await this.userRepository.findByIdAndEmail(userId, email);
 
             if (!user) {
+                console.warn(`🚫 [UserControllerDB] Usuario no encontrado con ID ${userId} y email ${email}`);
                 const response = ResponseModel.notFound('Usuario no encontrado');
                 response.log('[UserControllerDB]');
                 return response.send(res);
             }
 
-            console.log(`✅ [UserControllerDB] Usuario obtenido exitosamente con ID: ${user.id}`);
-
-            // 🔍 Verificar existencia y validez del OTP en la base
+            console.log(`✅ [UserControllerDB] Usuario encontrado, verificando OTP en base de datos...`);
             const isVerified = await this.otpRepository.verify(userId, email, otp);
 
             if (!isVerified) {
+                console.warn(`🚫 [UserControllerDB] OTP inválido o expirado para usuario: ${email}`);
                 const response = ResponseModel.badRequest('El OTP es inválido o ha expirado');
-                console.log(`🚫 [UserControllerDB] Fallo en la verificación del OTP para usuario: ${email}`);
                 return response.send(res);
             }
 
-            console.log(`✅ [UserControllerDB] OTP verificado para usuario: ${email}`);
-
-            // 🚀 Reestablecer contraseña
-            console.log(`🚀 [UserControllerDB] Reestableciendo contraseña para el usuario: ${email}`);
+            console.log(`✅ [UserControllerDB] OTP verificado correctamente. Actualizando contraseña...`);
             const isUpdated = await this.userRepository.updatePassword(userId, password);
 
             if (!isUpdated) {
+                console.error(`🚫 [UserControllerDB] Error al actualizar la contraseña para usuario: ${email}`);
                 const response = ResponseModel.badRequest('Error al actualizar la contraseña');
-                console.log(`🚫 [UserControllerDB] Fallo en la actualización de contraseña para usuario: ${email}`);
                 return response.send(res);
             }
 
+            console.log(`🎉 [UserControllerDB] Contraseña actualizada exitosamente para ${email}`);
             const response = this._createSuccessResponse('Contraseña reestablecida exitosamente');
-            console.log(`✅ [UserControllerDB] Contraseña reestablecida para usuario: ${email}`);
             return response.send(res);
 
         } catch (error) {
+            console.error(`❌ [UserControllerDB] Error en updatePassword:`, error.message);
             const response = this._handleControllerError(error);
             response.log('[UserControllerDB]');
             return response.send(res);
         }
     }
+
 
     /**
      * PATCH /api/users/{id}/account_status
@@ -390,34 +383,35 @@ class UserControllerDB {
      * @param {Object} res - Response object de Express
      */
     async verifyUserAccount(req, res) {
-        console.log('🚀 [UserControllerDB] Verificando usuario...');
-
+        console.log('🚀 [UserControllerDB] Iniciando verificación de cuenta de usuario...');
         const userId = parseInt(req.params.id);
 
         try {
-            console.log(`✅ [UserControllerDB] Buscando usuario con id: ${userId}`);
+            console.log(`🔍 [UserControllerDB] Buscando usuario con ID: ${userId}`);
             const user = await this.userRepository.findById(userId);
 
             if (!user) {
+                console.warn(`🚫 [UserControllerDB] Usuario no encontrado con ID: ${userId}`);
                 const response = ResponseModel.notFound('Usuario no encontrado');
-                response.log('[UserControllerDB] Usuario no encontrado');
+                response.log('[UserControllerDB]');
                 return response.send(res);
             }
 
-            console.log(`✅ [UserControllerDB] Usuario obtenido exitosamente con ID: ${user.id}`);
+            console.log(`✅ [UserControllerDB] Usuario encontrado: ${user.email} (ID: ${user.id})`);
+            console.log(`🔍 [UserControllerDB] Verificando estado de cuenta (actual: ${user.account_status})...`);
 
-            // 🔍 Verificar existencia y validez del OTP en la base
+            // Realiza la verificación del usuario (cambia el estado de PENDING_VALIDATION → VERIFIED)
             const result = await this.userRepository.verifyAccount(user.id);
 
             if (!result) {
-                const response = ResponseModel.badRequest('El usuario ya ha sido verifificado o borrado.');
-                console.log(`🚫 [UserControllerDB] Fallo en la verificación del usuario : ${user.id}`);
+                console.warn(`🚫 [UserControllerDB] Fallo en la verificación. El usuario ya fue verificado o eliminado (ID: ${user.id})`);
+                const response = ResponseModel.badRequest('El usuario ya ha sido verificado o borrado.');
                 return response.send(res);
             }
 
-            console.log(`✅ [UserControllerDB] Verificación exitosa para usuario: ${user.email}`);
-
+            console.log(`🎉 [UserControllerDB] Cuenta verificada exitosamente para usuario: ${user.email}`);
             const resultResponse = AccountStatusResponse.fromDatabase(result);
+
             const response = this._createSuccessResponse(
                 'Usuario verificado exitosamente',
                 resultResponse.toJSON(),
@@ -427,11 +421,13 @@ class UserControllerDB {
             return response.send(res);
 
         } catch (error) {
+            console.error(`❌ [UserControllerDB] Error verificando cuenta del usuario (${userId}):`, error.message);
             const response = this._handleControllerError(error);
-            response.log(`🚫 [UserControllerDB] Fallo en la verificación del usuario : ${id}`);
+            response.log('[UserControllerDB]');
             return response.send(res);
         }
     }
+
 }
 
 module.exports = UserControllerDB;

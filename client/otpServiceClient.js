@@ -1,23 +1,24 @@
 const axios = require("axios");
+const logger = require("../logger/Logger");
 
 class OtpServiceClient {
     constructor() {
-        // URL del servicio OTP desde variable de entorno
         this.baseUrl = process.env.OTP_SERVICE_URL || "http://localhost:8084/api/otp";
-        console.log("url del sevicio otp: " + this.baseUrl)
+        logger.info("[OtpServiceClient]", "Inicializando cliente OTP", { baseUrl: this.baseUrl });
     }
-
 
     /**
      * Llama al servicio-otp para crear un nuevo OTP
      * @returns {Promise<OtpCreationResponse>}
      */
     async createOtp() {
+        logger.info("[OtpServiceClient]", "Solicitando creación de OTP...");
         try {
             const response = await axios.post(`${this.baseUrl}`);
+            logger.info("[OtpServiceClient]", "OTP creado exitosamente", { otp: response.data?.otp });
             return response.data; // {"otp": "123456"}
         } catch (error) {
-            console.error("❌ [OtpServiceClient] Error creando OTP:", error.message);
+            logger.error("[OtpServiceClient]", "Error creando OTP", { error: error.message });
             throw error;
         }
     }
@@ -28,11 +29,13 @@ class OtpServiceClient {
      * @returns {Promise<CheckOtpFormatResponse>}
      */
     async checkOtpFormat(request) {
+        logger.info("[OtpServiceClient]", "Validando formato de OTP", { request });
         try {
             const response = await axios.post(`${this.baseUrl}/check`, request);
+            logger.info("[OtpServiceClient]", "Formato OTP validado exitosamente", { isValid: response.data?.isValidOtp });
             return response.data; // {"isValidOtp": true/false}
         } catch (error) {
-            console.error("❌ [OtpServiceClient] Error validando OTP:", error.message);
+            logger.error("[OtpServiceClient]", "Error validando formato de OTP", { error: error.message });
             throw error;
         }
     }

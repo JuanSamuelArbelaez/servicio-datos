@@ -1,4 +1,5 @@
 const express = require("express");
+const logger = require("./logger/Logger");
 
 const app = express();
 app.use(express.json());
@@ -9,13 +10,17 @@ const authRoutes = require('./routes/authRoutes');
 
 // Endpoint healthcheck del sistema
 app.get("/actuator/health", (req, res) => {
+    logger.info("[App]", "Health check solicitado");
     res.json({ status: "UP" });
 });
 
-// Usar rutas de usuarios
+// Usar rutas de usuarios y autenticación
 app.use('/api/users', userRoutes);
-app.use('/api/auth', authRoutes)
+app.use('/api/auth', authRoutes);
 
-app.listen(8082, () => {
-    console.log("✅ Data-service escuchando en puerto 8082");
+const PORT = process.env.PORT || 8082;
+
+app.listen(PORT, () => {
+    logger.info("[App]", "Data-service iniciado correctamente", { port: PORT });
 });
+
