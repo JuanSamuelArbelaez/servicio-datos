@@ -2,6 +2,7 @@ const pool = require('../config/database');
 const User = require('../models/User');
 const UserResponse = require('../models/UserResponse');
 const AccountStatusResponse = require('../models/AccountStatusResponse');
+const ProfileRepository = require('./profileRepository');
 const logger = require("../logger/Logger");
 
 class UserRepository {
@@ -158,6 +159,19 @@ class UserRepository {
             if (!createdUser) {
                 logger.error("[UserRepository]", "Error inesperado: no se devolvió usuario tras INSERT", { email });
                 throw new Error("Error al crear el usuario, sin datos devueltos");
+            }
+
+            // Crear perfil asociado al usuario
+            try {
+                const profileRepository = new ProfileRepository();
+                await profileRepository.create(createdUser.id);
+                logger.info("[UserRepository]", "Perfil creado para el usuario", { userId: createdUser.id });
+            } catch (profileError) {
+                logger.error("[UserRepository]", "Error creando perfil, pero usuario ya fue creado", { 
+                    userId: createdUser.id, 
+                    error: profileError.message 
+                });
+                // No lanzamos error para no afectar la creación del usuario
             }
 
             logger.info("[UserRepository]", "Usuario creado exitosamente", { id: createdUser.id, email });
